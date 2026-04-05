@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Teacher Rating</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Space+Grotesk:wght@400;500;700&display=swap"
+        rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+    <div class="background-shape background-shape-a"></div>
+    <div class="background-shape background-shape-b"></div>
+
+    <main class="page-shell">
+        <header class="hero-card">
+            <div>
+                <p class="eyebrow">Campus Feedback</p>
+                <h1>Rate Professors with Context, Not Just Stars</h1>
+                <p class="subtitle">
+                    Sign in with Google, choose a professor, leave a 1-5 star rating, and share your experience.
+                </p>
+            </div>
+            <div class="auth-box">
+                {% if user %}
+                    <div class="user-info">
+                        {% if user.picture %}
+                            <img src="{{ user.picture }}" alt="Profile photo" class="avatar" />
+                        {% else %}
+                            <div class="avatar avatar-fallback">{{ user.name[:1] }}</div>
+                        {% endif %}
+                        <div>
+                            <p class="user-name">
+                                {% if user.username %}@{{ user.username }}{% else %}Username not set{% endif %}
+                                {% if is_admin %}
+                                    <span class="admin-badge">Admin</span>
+                                {% endif %}
+                            </p>
+                            <p class="user-email">{{ user.email }}</p>
+                        </div>
+                    </div>
+                    <button id="logoutButton" class="button button-secondary" type="button">Sign out</button>
+                {% else %}
+                    {% if google_configured %}
+                        <a href="/auth/login" class="button button-primary">Sign in with Google</a>
+                    {% else %}
+                        <p class="config-warning">
+                            Google OAuth is not configured yet. Add your credentials to .env first.
+                        </p>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </header>
+
+        <p id="statusMessage" class="status-message" aria-live="polite"></p>
+
+        {% if user and not user.username %}
+            <section class="card onboarding-card">
+                <h2>Pick your username</h2>
+                <p class="muted">
+                    Required before posting reviews. Use 3-15 characters, letters/numbers/underscore, no explicit language.
+                </p>
+                <form id="usernameForm" class="onboarding-form">
+                    <label>
+                        Username
+                        <input id="usernameInput" name="username" type="text" minlength="3" maxlength="15" required />
+                    </label>
+                    <button class="button button-primary" type="submit">Save username</button>
+                </form>
+            </section>
+        {% endif %}
+
+        <section class="content-grid {% if not is_admin %}content-grid-single{% endif %}">
+            {% if is_admin %}
+            <article class="card">
+                <div class="card-title-row">
+                    <h2>Add Professor</h2>
+                    <span class="pill">Admin</span>
+                </div>
+
+                <form id="createProfessorForm" class="stack-form">
+                    <label>
+                        Professor name
+                        <input id="professorName" name="name" type="text" maxlength="255" required />
+                    </label>
+                    <label>
+                        Department
+                        <input id="professorDepartment" name="department" type="text" maxlength="255" />
+                    </label>
+                    <label>
+                        Photo URL
+                        <input id="professorPhotoUrl" name="photo_url" type="url" maxlength="1024" placeholder="https://..." />
+                    </label>
+                    <button class="button button-primary" type="submit">Add professor</button>
+                </form>
+            </article>
+            {% endif %}
+
+            <article class="card">
+                <h2>Professors</h2>
+                <ul id="professorList" class="professor-list"></ul>
+            </article>
+        </section>
+
+        <section class="card detail-card">
+            <div id="professorDetailEmpty" class="empty-state">Choose a professor to view ratings and reviews.</div>
+
+            <div id="professorDetailContent" class="hidden">
+                <div class="detail-header">
+                    <div class="detail-info">
+                        <img id="detailPhoto" class="professor-detail-photo hidden" alt="Professor photo" />
+                        <h2 id="detailName"></h2>
+                        <p id="detailDepartment" class="muted"></p>
+                    </div>
+                    <div class="detail-meta">
+                        <div class="rating-summary">
+                            <p class="big-number" id="detailAverage">-</p>
+                            <p class="muted" id="detailCount">0 reviews</p>
+                        </div>
+                        {% if is_admin %}
+                            <button id="deleteProfessorButton" class="button button-danger hidden" type="button">Delete professor</button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <form id="reviewForm" class="stack-form review-form" {% if not user or not user.username %}data-locked="true"{% endif %}>
+                    <h3>Leave your review</h3>
+                    <div class="star-input" role="radiogroup" aria-label="Rating">
+                        <label><input type="radio" name="rating" value="1" required /><span>1 star</span></label>
+                        <label><input type="radio" name="rating" value="2" required /><span>2 stars</span></label>
+                        <label><input type="radio" name="rating" value="3" required /><span>3 stars</span></label>
+                        <label><input type="radio" name="rating" value="4" required /><span>4 stars</span></label>
+                        <label><input type="radio" name="rating" value="5" required /><span>5 stars</span></label>
+                    </div>
+                    <label>
+                        Review
+                        <textarea id="reviewText" name="review_text" rows="4" maxlength="1500" placeholder="What stood out in this class?"></textarea>
+                    </label>
+                    <button class="button button-primary" type="submit">Submit review</button>
+                </form>
+
+                <div>
+                    <h3>Recent reviews</h3>
+                    <div id="reviewsList" class="reviews-list"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        window.APP_BOOTSTRAP = {
+            user: {{ user_payload | tojson }},
+            googleConfigured: {{ google_configured | tojson }},
+            isAdmin: {{ is_admin | tojson }},
+            needsUsername: {{ needs_username | tojson }}
+        };
+    </script>
+    <script src="/static/app.js" defer></script>
+</body>
+</html>
