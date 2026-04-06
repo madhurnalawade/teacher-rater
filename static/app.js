@@ -54,6 +54,60 @@ function formatStars(rating) {
     return "★".repeat(rating) + "☆".repeat(5 - rating);
 }
 
+function getErrorMessage(body, statusCode) {
+    const fallback = `Request failed (${statusCode})`;
+    if (!body) {
+        return fallback;
+    }
+
+    const detail = body.detail ?? body.error ?? body.message ?? body;
+    if (typeof detail === "string") {
+        return detail;
+    }
+
+    if (Array.isArray(detail)) {
+        const messages = detail
+            .map((item) => {
+                if (typeof item === "string") {
+                    return item;
+                }
+
+                if (item && typeof item === "object") {
+                    const message = typeof item.msg === "string" ? item.msg : null;
+                    const loc = Array.isArray(item.loc) ? item.loc.at(-1) : null;
+                    if (message && loc) {
+                        return `${loc}: ${message}`;
+                    }
+                    if (message) {
+                        return message;
+                    }
+                }
+
+                return null;
+            })
+            .filter(Boolean);
+
+        if (messages.length) {
+            return messages.join("; ");
+        }
+        return fallback;
+    }
+
+    if (detail && typeof detail === "object") {
+        if (typeof detail.message === "string") {
+            return detail.message;
+        }
+
+        try {
+            return JSON.stringify(detail);
+        } catch {
+            return fallback;
+        }
+    }
+
+    return fallback;
+}
+
 async function apiFetch(path, options = {}) {
     const config = {
         credentials: "same-origin",
@@ -80,7 +134,7 @@ async function apiFetch(path, options = {}) {
     }
 
     if (!response.ok) {
-        throw new Error(body?.detail || `Request failed (${response.status})`);
+        throw new Error(getErrorMessage(body, response.status));
     }
 
     return body;
