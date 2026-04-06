@@ -108,6 +108,7 @@ class ReviewRead(BaseModel):
     rating: int
     review_text: str | None = None
     created_at: datetime
+    is_deleted: bool = False
     reviewer: UserPublic
 
     model_config = ConfigDict(from_attributes=True)

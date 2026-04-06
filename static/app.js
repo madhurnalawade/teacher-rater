@@ -21,7 +21,13 @@ const detailDepartmentEl = document.getElementById("detailDepartment");
 const detailPhotoEl = document.getElementById("detailPhoto");
 const detailAverageEl = document.getElementById("detailAverage");
 const detailCountEl = document.getElementById("detailCount");
+const editProfessorButtonEl = document.getElementById("editProfessorButton");
 const deleteProfessorButtonEl = document.getElementById("deleteProfessorButton");
+const editProfessorFormEl = document.getElementById("editProfessorForm");
+const editProfessorNameEl = document.getElementById("editProfessorName");
+const editProfessorDepartmentEl = document.getElementById("editProfessorDepartment");
+const editProfessorPhotoUrlEl = document.getElementById("editProfessorPhotoUrl");
+const cancelEditProfessorButtonEl = document.getElementById("cancelEditProfessorButton");
 const logoutButtonEl = document.getElementById("logoutButton");
 const usernameFormEl = document.getElementById("usernameForm");
 const usernameInputEl = document.getElementById("usernameInput");
@@ -130,9 +136,16 @@ function renderProfessorDetails() {
     if (!state.selectedProfessor) {
         detailEmptyEl.classList.remove("hidden");
         detailContentEl.classList.add("hidden");
+        if (editProfessorButtonEl) {
+            editProfessorButtonEl.classList.add("hidden");
+            editProfessorButtonEl.removeAttribute("data-professor-id");
+        }
         if (deleteProfessorButtonEl) {
             deleteProfessorButtonEl.classList.add("hidden");
             deleteProfessorButtonEl.removeAttribute("data-professor-id");
+        }
+        if (editProfessorFormEl) {
+            editProfessorFormEl.classList.add("hidden");
         }
         return;
     }
@@ -140,6 +153,24 @@ function renderProfessorDetails() {
     const professor = state.selectedProfessor;
     detailEmptyEl.classList.add("hidden");
     detailContentEl.classList.remove("hidden");
+
+    if (editProfessorFormEl) {
+        if (state.isAdmin) {
+            editProfessorFormEl.classList.remove("hidden");
+        } else {
+            editProfessorFormEl.classList.add("hidden");
+        }
+    }
+
+    if (editProfessorButtonEl) {
+        if (state.isAdmin) {
+            editProfessorButtonEl.classList.remove("hidden");
+            editProfessorButtonEl.setAttribute("data-professor-id", String(professor.id));
+        } else {
+            editProfessorButtonEl.classList.add("hidden");
+            editProfessorButtonEl.removeAttribute("data-professor-id");
+        }
+    }
 
     if (deleteProfessorButtonEl) {
         if (state.isAdmin) {
@@ -153,6 +184,16 @@ function renderProfessorDetails() {
 
     detailNameEl.textContent = professor.name;
     detailDepartmentEl.textContent = professor.department || "No department listed";
+
+    if (editProfessorNameEl) {
+        editProfessorNameEl.value = professor.name || "";
+    }
+    if (editProfessorDepartmentEl) {
+        editProfessorDepartmentEl.value = professor.department || "";
+    }
+    if (editProfessorPhotoUrlEl) {
+        editProfessorPhotoUrlEl.value = professor.photo_url || "";
+    }
     if (detailPhotoEl) {
         if (professor.photo_url) {
             detailPhotoEl.src = professor.photo_url;
@@ -181,10 +222,25 @@ function renderProfessorDetails() {
             const reviewerEmail = review.reviewer.email
                 ? `<p class="reviewer-email">${escapeHtml(review.reviewer.email)}</p>`
                 : "";
-            const deleteAction = state.isAdmin
+            const isDeleted = Boolean(review.is_deleted);
+            const canDeleteReview = Boolean(
+                state.user
+                && (
+                    state.isAdmin
+                    || Number(state.user.id) === Number(review.reviewer.id)
+                )
+            );
+            const deleteAction = canDeleteReview && !isDeleted
                 ? `<div class="review-footer"><button class="button button-danger" type="button" data-delete-review-id="${review.id}">Delete review</button></div>`
                 : "";
-            const reviewItemClass = state.isAdmin ? "review-item review-item-admin" : "review-item";
+            const deletedState = isDeleted ? `<p class="muted deleted-review-label">Deleted review</p>` : "";
+            const reviewItemClass = [
+                "review-item",
+                state.isAdmin ? "review-item-admin" : "",
+                isDeleted ? "review-item-deleted" : "",
+            ]
+                .filter(Boolean)
+                .join(" ");
 
             return `
                 <article class="${reviewItemClass}">
@@ -192,6 +248,7 @@ function renderProfessorDetails() {
                         <p class="reviewer-name">@${escapeHtml(review.reviewer.username)}</p>
                         <p class="muted">${date}</p>
                     </div>
+                    ${deletedState}
                     ${reviewerEmail}
                     <p class="review-stars">${formatStars(review.rating)}</p>
                     ${textBlock}
@@ -349,13 +406,64 @@ async function onDeleteProfessorClick(event) {
     }
 }
 
-async function onReviewsListClick(event) {
-    const button = event.target.closest("[data-delete-review-id]");
-    if (!button) {
+function showEditProfessorForm() {
+    if (!editProfessorFormEl) {
+        return;
+    }
+    editProfessorFormEl.classList.remove("hidden");
+}
+
+function hideEditProfessorForm() {
+    if (!editProfessorFormEl) {
+        return;
+    }
+    editProfessorFormEl.classList.add("hidden");
+}
+
+async function onEditProfessorClick() {
+    if (!state.isAdmin || !state.selectedProfessor) {
+        return;
+    }
+    showEditProfessorForm();
+}
+
+async function onEditProfessorSubmit(event) {
+    event.preventDefault();
+    if (!state.isAdmin || !state.selectedProfessorId) {
         return;
     }
 
-    if (!state.isAdmin) {
+    const name = (editProfessorNameEl?.value || "").trim();
+    const department = (editProfessorDepartmentEl?.value || "").trim();
+    const photoUrl = (editProfessorPhotoUrlEl?.value || "").trim();
+
+    if (!name) {
+        setStatus("Professor name is required.", true);
+        return;
+    }
+
+    try {
+        await apiFetch(`/api/professors/${state.selectedProfessorId}`, {
+            method: "PUT",
+            body: JSON.stringify({
+                name,
+                department: department || null,
+                photo_url: photoUrl || null,
+            }),
+        });
+
+        hideEditProfessorForm();
+        await loadProfessors();
+        await selectProfessor(state.selectedProfessorId);
+        setStatus("Professor updated.");
+    } catch (error) {
+        setStatus(error.message, true);
+    }
+}
+
+async function onReviewsListClick(event) {
+    const button = event.target.closest("[data-delete-review-id]");
+    if (!button) {
         return;
     }
 
@@ -442,6 +550,18 @@ async function init() {
 
     if (deleteProfessorButtonEl) {
         deleteProfessorButtonEl.addEventListener("click", onDeleteProfessorClick);
+    }
+
+    if (editProfessorButtonEl) {
+        editProfessorButtonEl.addEventListener("click", onEditProfessorClick);
+    }
+
+    if (editProfessorFormEl) {
+        editProfessorFormEl.addEventListener("submit", onEditProfessorSubmit);
+    }
+
+    if (cancelEditProfessorButtonEl) {
+        cancelEditProfessorButtonEl.addEventListener("click", hideEditProfessorForm);
     }
 
     if (reviewsListEl) {

@@ -419,6 +419,12 @@ textarea:focus {
     background: rgba(255, 255, 255, 0.7);
 }
 
+.form-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 .star-input {
     display: flex;
     gap: 8px;
@@ -469,6 +475,31 @@ textarea:focus {
 
 .review-item-admin {
     border-color: rgba(173, 47, 47, 0.3);
+}
+
+.review-item-deleted {
+    filter: grayscale(1);
+    opacity: 0.58;
+    background: rgba(219, 219, 219, 0.75);
+    border-style: dashed;
+}
+
+.review-item-deleted .review-text,
+.review-item-deleted .review-stars {
+    text-decoration: line-through;
+}
+
+.deleted-review-label {
+    margin-top: 4px;
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #333;
+    color: #fff;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
 }
 
 .review-meta {

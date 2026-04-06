@@ -1,5 +1,7 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import schemas
@@ -24,7 +26,13 @@ def list_professors(db: Session = Depends(get_db)):
             func.avg(Review.rating).label("average_rating"),
             func.count(Review.id).label("review_count"),
         )
-        .outerjoin(Review, Review.professor_id == Professor.id)
+        .outerjoin(
+            Review,
+            and_(
+                Review.professor_id == Professor.id,
+                Review.is_deleted.is_(False),
+            ),
+        )
         .group_by(Professor.id)
         .order_by(Professor.name.asc())
     )
@@ -77,6 +85,54 @@ def create_professor(
     )
 
 
+@router.put("/professors/{professor_id}", response_model=schemas.ProfessorRead)
+def update_professor(
+    professor_id: int,
+    payload: schemas.ProfessorCreate,
+    db: Session = Depends(get_db),
+    _admin_user: User = Depends(get_admin_user),
+):
+    professor = db.get(Professor, professor_id)
+    if professor is None:
+        raise HTTPException(status_code=404, detail="Professor not found.")
+
+    existing = db.execute(
+        select(Professor).where(
+            func.lower(Professor.name) == payload.name.lower(),
+            Professor.id != professor_id,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="A professor with this name already exists.")
+
+    professor.name = payload.name
+    professor.department = payload.department
+    professor.photo_url = payload.photo_url
+    db.commit()
+    db.refresh(professor)
+
+    stats = db.execute(
+        select(
+            func.avg(Review.rating),
+            func.count(Review.id),
+        ).where(
+            Review.professor_id == professor.id,
+            Review.is_deleted.is_(False),
+        )
+    ).one()
+
+    avg_rating, review_count = stats
+    return schemas.ProfessorRead(
+        id=professor.id,
+        name=professor.name,
+        department=professor.department,
+        photo_url=professor.photo_url,
+        created_at=professor.created_at,
+        average_rating=float(avg_rating) if avg_rating is not None else None,
+        review_count=int(review_count),
+    )
+
+
 @router.delete("/professors/{professor_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_professor(
     professor_id: int,
@@ -95,13 +151,21 @@ def delete_professor(
 def delete_review(
     review_id: int,
     db: Session = Depends(get_db),
-    _admin_user: User = Depends(get_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
     review = db.get(Review, review_id)
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found.")
 
-    db.delete(review)
+    can_delete = is_admin_user(current_user) or review.user_id == current_user.id
+    if not can_delete:
+        raise HTTPException(status_code=403, detail="You can only delete your own review.")
+
+    if review.is_deleted:
+        return
+
+    review.is_deleted = True
+    review.deleted_at = datetime.now(timezone.utc)
     db.commit()
 
 
@@ -121,13 +185,19 @@ def get_professor_details(
     if professor is None:
         raise HTTPException(status_code=404, detail="Professor not found.")
 
+    is_admin = is_admin_user(current_user)
+
+    visible_reviews = professor.reviews
+    if not is_admin:
+        visible_reviews = [review for review in professor.reviews if not review.is_deleted]
+
     reviews_sorted = sorted(
-        professor.reviews,
+        visible_reviews,
         key=lambda review: review.created_at,
         reverse=True,
     )
 
-    can_view_reviewer_emails = is_admin_user(current_user)
+    can_view_reviewer_emails = is_admin
 
     review_models = [
         schemas.ReviewRead(
@@ -135,6 +205,7 @@ def get_professor_details(
             rating=review.rating,
             review_text=review.review_text,
             created_at=review.created_at,
+            is_deleted=review.is_deleted,
             reviewer=schemas.UserPublic(
                 id=review.reviewer.id,
                 username=review.reviewer.username or "anonymous",
@@ -146,7 +217,11 @@ def get_professor_details(
 
     average_rating = None
     if reviews_sorted:
-        average_rating = round(sum(review.rating for review in reviews_sorted) / len(reviews_sorted), 2)
+        average_rating = round(
+            sum(review.rating for review in reviews_sorted if not review.is_deleted)
+            / len([review for review in reviews_sorted if not review.is_deleted]),
+            2,
+        ) if any(not review.is_deleted for review in reviews_sorted) else None
 
     return schemas.ProfessorDetails(
         id=professor.id,
@@ -155,7 +230,7 @@ def get_professor_details(
         photo_url=professor.photo_url,
         created_at=professor.created_at,
         average_rating=average_rating,
-        review_count=len(reviews_sorted),
+        review_count=len([review for review in reviews_sorted if not review.is_deleted]),
         reviews=review_models,
     )
 
@@ -187,16 +262,24 @@ def create_review(
             Review.user_id == current_user.id,
         )
     ).scalar_one_or_none()
-    if existing:
+    if existing and not existing.is_deleted:
         raise HTTPException(status_code=409, detail="You already reviewed this professor.")
 
-    review = Review(
-        rating=payload.rating,
-        review_text=payload.review_text,
-        user_id=current_user.id,
-        professor_id=professor.id,
-    )
-    db.add(review)
+    if existing and existing.is_deleted:
+        existing.rating = payload.rating
+        existing.review_text = payload.review_text
+        existing.is_deleted = False
+        existing.deleted_at = None
+        review = existing
+    else:
+        review = Review(
+            rating=payload.rating,
+            review_text=payload.review_text,
+            user_id=current_user.id,
+            professor_id=professor.id,
+        )
+        db.add(review)
+
     db.commit()
     db.refresh(review)
 
@@ -205,6 +288,7 @@ def create_review(
         rating=review.rating,
         review_text=review.review_text,
         created_at=review.created_at,
+        is_deleted=review.is_deleted,
         reviewer=schemas.UserPublic(
             id=current_user.id,
             username=current_user.username,

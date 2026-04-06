@@ -1,13 +1,20 @@
+import os
+
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import settings
 
 
-is_sqlite = settings.database_url.startswith("sqlite")
+resolved_database_url = settings.database_url
+if os.getenv("VERCEL") and settings.database_url.startswith("sqlite:///./"):
+    # Vercel function filesystem is read-only outside /tmp.
+    resolved_database_url = "sqlite:////tmp/teacher_rating.db"
+
+is_sqlite = resolved_database_url.startswith("sqlite")
 connect_args = {"check_same_thread": False} if is_sqlite else {}
 
-engine = create_engine(settings.database_url, connect_args=connect_args)
+engine = create_engine(resolved_database_url, connect_args=connect_args)
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -36,6 +43,13 @@ def apply_mvp_schema_fixes() -> None:
             professor_columns = {column["name"] for column in inspect(engine).get_columns("professors")}
             if "photo_url" not in professor_columns:
                 connection.execute(text("ALTER TABLE professors ADD COLUMN photo_url VARCHAR(1024)"))
+
+        if "reviews" in table_names:
+            review_columns = {column["name"] for column in inspect(engine).get_columns("reviews")}
+            if "is_deleted" not in review_columns:
+                connection.execute(text("ALTER TABLE reviews ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT 0"))
+            if "deleted_at" not in review_columns:
+                connection.execute(text("ALTER TABLE reviews ADD COLUMN deleted_at DATETIME"))
 
 
 def get_db():
