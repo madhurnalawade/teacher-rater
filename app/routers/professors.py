@@ -206,6 +206,13 @@ def get_professor_details(
             review_text=review.review_text,
             created_at=review.created_at,
             is_deleted=review.is_deleted,
+            can_delete=bool(
+                current_user
+                and (
+                    is_admin
+                    or review.user_id == current_user.id
+                )
+            ),
             reviewer=schemas.UserPublic(
                 id=review.reviewer.id,
                 username=review.reviewer.username or "anonymous",
@@ -289,6 +296,7 @@ def create_review(
         review_text=review.review_text,
         created_at=review.created_at,
         is_deleted=review.is_deleted,
+        can_delete=True,
         reviewer=schemas.UserPublic(
             id=current_user.id,
             username=current_user.username,

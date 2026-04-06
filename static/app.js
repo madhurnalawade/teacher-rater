@@ -277,13 +277,7 @@ function renderProfessorDetails() {
                 ? `<p class="reviewer-email">${escapeHtml(review.reviewer.email)}</p>`
                 : "";
             const isDeleted = Boolean(review.is_deleted);
-            const canDeleteReview = Boolean(
-                state.user
-                && (
-                    state.isAdmin
-                    || Number(state.user.id) === Number(review.reviewer.id)
-                )
-            );
+            const canDeleteReview = Boolean(review.can_delete);
             const deleteAction = canDeleteReview && !isDeleted
                 ? `<div class="review-footer"><button class="button button-danger" type="button" data-delete-review-id="${review.id}">Delete review</button></div>`
                 : "";
