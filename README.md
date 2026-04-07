@@ -75,6 +75,7 @@ Create credentials in Google Cloud Console and add this redirect URI:
 - Admins can attach a teacher photo URL when creating a professor.
 - Admins can edit professor records without removing existing reviews.
 - Deleted reviews are hidden from regular users; admins can still see them in a grayscale style.
+- Explicit words in review text are masked for non-admin users; admins see uncensored text.
 - Tables are created automatically on app start for this MVP.
 - For production, use Alembic migrations and a managed PostgreSQL instance.
 

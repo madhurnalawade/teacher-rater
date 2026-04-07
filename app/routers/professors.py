@@ -9,6 +9,7 @@ from app.access import is_admin_user
 from app.db import get_db
 from app.dependencies import get_admin_user, get_current_user, get_optional_user
 from app.models import Professor, Review, User
+from app.username_policy import censor_review_text
 
 
 router = APIRouter(prefix="/api", tags=["professors"])
@@ -203,7 +204,7 @@ def get_professor_details(
         schemas.ReviewRead(
             id=review.id,
             rating=review.rating,
-            review_text=review.review_text,
+            review_text=censor_review_text(review.review_text, is_admin=is_admin),
             created_at=review.created_at,
             is_deleted=review.is_deleted,
             can_delete=bool(
@@ -293,7 +294,10 @@ def create_review(
     return schemas.ReviewRead(
         id=review.id,
         rating=review.rating,
-        review_text=review.review_text,
+        review_text=censor_review_text(
+            review.review_text,
+            is_admin=is_admin_user(current_user),
+        ),
         created_at=review.created_at,
         is_deleted=review.is_deleted,
         can_delete=True,
